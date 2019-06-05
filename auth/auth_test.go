@@ -81,7 +81,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestMe(t *testing.T) {
-	creds, err := google.FindDefaultCredentials(context.Background(), internal.FirebaseScopes...)
+	creds, err := google.FindDefaultCredentials(context.Background(), "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
 		t.Fatal(err)
 	}
