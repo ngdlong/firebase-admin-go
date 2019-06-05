@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -77,6 +78,38 @@ func TestMain(m *testing.M) {
 	testIDToken = getIDToken(nil)
 	testSessionCookie = getSessionCookie(nil)
 	os.Exit(m.Run())
+}
+
+func TestMe(t *testing.T) {
+	creds, err := google.FindDefaultCredentials(context.Background(), internal.FirebaseScopes...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	log.Println("Project ID: ", creds.ProjectID)
+	log.Println("Service account: ", string(creds.JSON))
+
+	client, _, err := transport.NewHTTPClient(context.Background(), option.WithCredentials(creds))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	url := fmt.Sprintf("https://cloudresourcemanager.googleapis.com/v1/projects/%s:getIamPolicy", creds.ProjectID)
+	body := bytes.NewBuffer([]byte("{}"))
+	resp, err := client.Post(url, "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	log.Println("Response status: ", resp.Status)
+	log.Println("Response received: ", string(data))
+	t.Error("Failing test case")
 }
 
 func TestNewClientWithServiceAccountCredentials(t *testing.T) {
