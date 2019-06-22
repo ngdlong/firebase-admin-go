@@ -39,16 +39,16 @@ import (
 )
 
 const (
-	idTokenCertURL            = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
-	idTokenIssuerPrefix       = "https://securetoken.google.com/"
-	sessionCookieCertURL      = "https://www.googleapis.com/identitytoolkit/v3/relyingparty/publicKeys"
-	sessionCookieIssuerPrefix = "https://session.firebase.google.com/"
-	clockSkewSeconds          = 300
+	defaultIDTokenCertURL            = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+	defaultIDTokenIssuerPrefix       = "https://securetoken.google.com/"
+	defaultSessionCookieCertURL      = "https://www.googleapis.com/identitytoolkit/v3/relyingparty/publicKeys"
+	defaultSessionCookieIssuerPrefix = "https://session.firebase.google.com/"
+	clockSkewSeconds                 = 300
 )
 
-// tokenVerifier verifies different types of Firebase token strings, including ID tokens and
+// TokenVerifier verifies different types of Firebase token strings, including ID tokens and
 // session cookies.
-type tokenVerifier struct {
+type TokenVerifier struct {
 	shortName         string
 	articledShortName string
 	docURL            string
@@ -58,12 +58,13 @@ type tokenVerifier struct {
 	clock             internal.Clock
 }
 
-func newIDTokenVerifier(ctx context.Context, projectID string) (*tokenVerifier, error) {
+// NewIDTokenVerifier creates new TokenVerifier from provided config
+func NewIDTokenVerifier(ctx context.Context, projectID, idTokenIssuerPrefix, idTokenCertURL string) (*TokenVerifier, error) {
 	noAuthHTTPClient, _, err := transport.NewHTTPClient(ctx, option.WithoutAuthentication())
 	if err != nil {
 		return nil, err
 	}
-	return &tokenVerifier{
+	return &TokenVerifier{
 		shortName:         "ID token",
 		articledShortName: "an ID token",
 		docURL:            "https://firebase.google.com/docs/auth/admin/verify-id-tokens",
@@ -74,12 +75,13 @@ func newIDTokenVerifier(ctx context.Context, projectID string) (*tokenVerifier, 
 	}, nil
 }
 
-func newSessionCookieVerifier(ctx context.Context, projectID string) (*tokenVerifier, error) {
+// NewSessionCookieVerifier creates new TokenVerifier from provided config
+func NewSessionCookieVerifier(ctx context.Context, projectID, sessionCookieIssuerPrefix, sessionCookieCertURL string) (*TokenVerifier, error) {
 	noAuthHTTPClient, _, err := transport.NewHTTPClient(ctx, option.WithoutAuthentication())
 	if err != nil {
 		return nil, err
 	}
-	return &tokenVerifier{
+	return &TokenVerifier{
 		shortName:         "session cookie",
 		articledShortName: "a session cookie",
 		docURL:            "https://firebase.google.com/docs/auth/admin/manage-cookies",
@@ -96,14 +98,14 @@ func newSessionCookieVerifier(ctx context.Context, projectID string) (*tokenVeri
 //   - The token string is a valid RS256 JWT.
 //   - The JWT contains a valid key ID (kid) claim.
 //   - The JWT contains valid issuer (iss) and audience (aud) claims that match the issuerPrefix
-//     and projectID of the tokenVerifier.
+//     and projectID of the TokenVerifier.
 //   - The JWT contains a valid subject (sub) claim.
 //   - The JWT is not expired, and it has been issued some time in the past.
 //   - The JWT is signed by a Firebase Auth backend server as determined by the keySource.
 //
 // If any of the above conditions are not met, an error is returned. Otherwise a pointer to a
 // decoded Token is returned.
-func (tv *tokenVerifier) VerifyToken(ctx context.Context, token string) (*Token, error) {
+func (tv *TokenVerifier) VerifyToken(ctx context.Context, token string) (*Token, error) {
 	if tv.projectID == "" {
 		return nil, errors.New("project id not available")
 	}
@@ -130,7 +132,7 @@ func (tv *tokenVerifier) VerifyToken(ctx context.Context, token string) (*Token,
 	return payload, nil
 }
 
-func (tv *tokenVerifier) verifyContent(token string) (*Token, error) {
+func (tv *TokenVerifier) verifyContent(token string) (*Token, error) {
 	var (
 		header  jwtHeader
 		payload Token
@@ -190,7 +192,7 @@ func (tv *tokenVerifier) verifyContent(token string) (*Token, error) {
 	return &payload, nil
 }
 
-func (tv *tokenVerifier) verifyTimestamps(payload *Token) error {
+func (tv *TokenVerifier) verifyTimestamps(payload *Token) error {
 	if (payload.IssuedAt - clockSkewSeconds) > tv.clock.Now().Unix() {
 		return fmt.Errorf("%s issued at future timestamp: %d", tv.shortName, payload.IssuedAt)
 	} else if (payload.Expires + clockSkewSeconds) < tv.clock.Now().Unix() {
@@ -199,7 +201,7 @@ func (tv *tokenVerifier) verifyTimestamps(payload *Token) error {
 	return nil
 }
 
-func (tv *tokenVerifier) verifySignature(ctx context.Context, token string) error {
+func (tv *TokenVerifier) verifySignature(ctx context.Context, token string) error {
 	segments := strings.Split(token, ".")
 
 	var h jwtHeader
@@ -227,7 +229,7 @@ func (tv *tokenVerifier) verifySignature(ctx context.Context, token string) erro
 	return nil
 }
 
-func (tv *tokenVerifier) getProjectIDMatchMessage() string {
+func (tv *TokenVerifier) getProjectIDMatchMessage() string {
 	return fmt.Sprintf(
 		"make sure the %s comes from the same Firebase project as the credential used to"+
 			" authenticate this SDK", tv.shortName)

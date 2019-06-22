@@ -41,8 +41,8 @@ var reservedClaims = []string{
 // by Firebase backend services.
 type Client struct {
 	userManagementClient
-	idTokenVerifier *tokenVerifier
-	cookieVerifier  *tokenVerifier
+	idTokenVerifier *TokenVerifier
+	cookieVerifier  *TokenVerifier
 	signer          cryptoSigner
 	clock           internal.Clock
 }
@@ -87,12 +87,12 @@ func NewClient(ctx context.Context, conf *internal.AuthConfig) (*Client, error) 
 		return nil, err
 	}
 
-	idTokenVerifier, err := newIDTokenVerifier(ctx, conf.ProjectID)
+	idTokenVerifier, err := NewIDTokenVerifier(ctx, conf.ProjectID, defaultIDTokenIssuerPrefix, defaultIDTokenCertURL)
 	if err != nil {
 		return nil, err
 	}
 
-	cookieVerifier, err := newSessionCookieVerifier(ctx, conf.ProjectID)
+	cookieVerifier, err := NewSessionCookieVerifier(ctx, conf.ProjectID, defaultSessionCookieIssuerPrefix, defaultSessionCookieCertURL)
 	if err != nil {
 		return nil, err
 	}

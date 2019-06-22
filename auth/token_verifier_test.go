@@ -28,25 +28,25 @@ import (
 )
 
 func TestNewIDTokenVerifier(t *testing.T) {
-	tv, err := newIDTokenVerifier(context.Background(), testProjectID)
+	tv, err := NewIDTokenVerifier(context.Background(), testProjectID, defaultIDTokenIssuerPrefix, defaultIDTokenCertURL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tv.shortName != "ID token" {
-		t.Errorf("tokenVerifier.shortName = %q; want = %q", tv.shortName, "ID token")
+		t.Errorf("TokenVerifier.shortName = %q; want = %q", tv.shortName, "ID token")
 	}
 	if tv.projectID != testProjectID {
-		t.Errorf("tokenVerifier.projectID = %q; want = %q", tv.projectID, testProjectID)
+		t.Errorf("TokenVerifier.projectID = %q; want = %q", tv.projectID, testProjectID)
 	}
-	if tv.issuerPrefix != idTokenIssuerPrefix {
-		t.Errorf("tokenVerifier.issuerPrefix = %q; want = %q", tv.issuerPrefix, idTokenIssuerPrefix)
+	if tv.issuerPrefix != defaultIDTokenIssuerPrefix {
+		t.Errorf("TokenVerifier.issuerPrefix = %q; want = %q", tv.issuerPrefix, defaultIDTokenIssuerPrefix)
 	}
 	ks, ok := tv.keySource.(*httpKeySource)
 	if !ok {
-		t.Fatalf("tokenVerifier.keySource = %#v; want = httpKeySource", tv.keySource)
+		t.Fatalf("TokenVerifier.keySource = %#v; want = httpKeySource", tv.keySource)
 	}
-	if ks.KeyURI != idTokenCertURL {
-		t.Errorf("tokenVerifier.certURL = %q; want = %q", ks.KeyURI, idTokenCertURL)
+	if ks.KeyURI != defaultIDTokenCertURL {
+		t.Errorf("TokenVerifier.certURL = %q; want = %q", ks.KeyURI, defaultIDTokenCertURL)
 	}
 }
 
