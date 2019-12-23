@@ -107,6 +107,9 @@ func TestDeleteNonExistingUser(t *testing.T) {
 }
 
 func TestListUsers(t *testing.T) {
+	errMsgTemplate := "Users() %s = empty; want = non-empty. A common cause would be " +
+		"forgetting to add the 'Firebase Authentication Admin' permission. See " +
+		"instructions in CONTRIBUTING.md"
 	newUsers := map[string]bool{}
 	user := newUserWithParams(t)
 	defer deleteUser(user.UID)
@@ -133,7 +136,10 @@ func TestListUsers(t *testing.T) {
 		if _, ok := newUsers[u.UID]; ok {
 			count++
 			if u.PasswordHash == "" {
-				t.Errorf("Users() PasswordHash = empty; want = non-empty")
+				t.Errorf(errMsgTemplate, "PasswordHash")
+			}
+			if u.PasswordSalt == "" {
+				t.Errorf(errMsgTemplate, "PasswordSalt")
 			}
 		}
 	}
@@ -351,32 +357,13 @@ func TestImportUsers(t *testing.T) {
 }
 
 func TestImportUsersWithPassword(t *testing.T) {
-	const (
-		rawScryptKey    = "jxspr8Ki0RYycVU8zykbdLGjFQ3McFUH0uiiTvC8pVMXAn210wjLNmdZJzxUECKbm0QsEmYUSDzZvpjeJ9WmXA=="
-		rawPasswordHash = "V358E8LdWJXAO7muq0CufVpEOXaj8aFiC7T/rcaGieN04q/ZPJ08WhJEHGjj9lz/2TT+/86N5VjVoc5DdBhBiw=="
-		rawSeparator    = "Bw=="
-	)
-	scryptKey, err := base64.StdEncoding.DecodeString(rawScryptKey)
+	scrypt, passwordHash, err := newScryptHash()
 	if err != nil {
-		t.Fatal(err)
-	}
-	saltSeparator, err := base64.StdEncoding.DecodeString(rawSeparator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	scrypt := hash.Scrypt{
-		Key:           scryptKey,
-		SaltSeparator: saltSeparator,
-		Rounds:        8,
-		MemoryCost:    14,
+		t.Fatalf("newScryptHash() = %v", err)
 	}
 
 	uid := randomUID()
 	email := randomEmail(uid)
-	passwordHash, err := base64.StdEncoding.DecodeString(rawPasswordHash)
-	if err != nil {
-		t.Fatal(err)
-	}
 	user := (&auth.UserToImport{}).
 		UID(uid).
 		Email(email).
@@ -405,6 +392,37 @@ func TestImportUsersWithPassword(t *testing.T) {
 	if idToken == "" {
 		t.Errorf("ID Token = empty; want = non-empty")
 	}
+}
+
+func newScryptHash() (*hash.Scrypt, []byte, error) {
+	const (
+		rawScryptKey    = "jxspr8Ki0RYycVU8zykbdLGjFQ3McFUH0uiiTvC8pVMXAn210wjLNmdZJzxUECKbm0QsEmYUSDzZvpjeJ9WmXA=="
+		rawPasswordHash = "V358E8LdWJXAO7muq0CufVpEOXaj8aFiC7T/rcaGieN04q/ZPJ08WhJEHGjj9lz/2TT+/86N5VjVoc5DdBhBiw=="
+		rawSeparator    = "Bw=="
+	)
+
+	scryptKey, err := base64.StdEncoding.DecodeString(rawScryptKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	saltSeparator, err := base64.StdEncoding.DecodeString(rawSeparator)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	passwordHash, err := base64.StdEncoding.DecodeString(rawPasswordHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	scrypt := hash.Scrypt{
+		Key:           scryptKey,
+		SaltSeparator: saltSeparator,
+		Rounds:        8,
+		MemoryCost:    14,
+	}
+	return &scrypt, passwordHash, nil
 }
 
 func TestSessionCookie(t *testing.T) {

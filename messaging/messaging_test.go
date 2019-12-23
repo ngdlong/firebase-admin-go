@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -82,12 +81,18 @@ var validMessages = []struct {
 				"k1": "v1",
 				"k2": "v2",
 			},
+			FCMOptions: &FCMOptions{
+				AnalyticsLabel: "Analytics",
+			},
 			Topic: "test-topic",
 		},
 		want: map[string]interface{}{
 			"data": map[string]interface{}{
 				"k1": "v1",
 				"k2": "v2",
+			},
+			"fcm_options": map[string]interface{}{
+				"analytics_label": "Analytics",
 			},
 			"topic": "test-topic",
 		},
@@ -96,8 +101,9 @@ var validMessages = []struct {
 		name: "NotificationMessage",
 		req: &Message{
 			Notification: &Notification{
-				Title: "t",
-				Body:  "b",
+				Title:    "t",
+				Body:     "b",
+				ImageURL: "http://image.jpg",
 			},
 			Topic: "test-topic",
 		},
@@ -105,6 +111,7 @@ var validMessages = []struct {
 			"notification": map[string]interface{}{
 				"title": "t",
 				"body":  "b",
+				"image": "http://image.jpg",
 			},
 			"topic": "test-topic",
 		},
@@ -151,8 +158,12 @@ var validMessages = []struct {
 					BodyLocKey:   "blk",
 					BodyLocArgs:  []string{"b1", "b2"},
 					ChannelID:    "channel",
+					ImageURL:     "http://image.jpg",
 				},
 				TTL: &ttlWithNanos,
+				FCMOptions: &AndroidFCMOptions{
+					AnalyticsLabel: "Analytics",
+				},
 			},
 			Topic: "test-topic",
 		},
@@ -169,8 +180,12 @@ var validMessages = []struct {
 					"body_loc_key":   "blk",
 					"body_loc_args":  []interface{}{"b1", "b2"},
 					"channel_id":     "channel",
+					"image":          "http://image.jpg",
 				},
 				"ttl": "1.500000000s",
+				"fcm_options": map[string]interface{}{
+					"analytics_label": "Analytics",
+				},
 			},
 			"topic": "test-topic",
 		},
@@ -260,7 +275,7 @@ var validMessages = []struct {
 					"k1":                 "v1",
 					"k2":                 "v2",
 				},
-				"fcmOptions": map[string]interface{}{
+				"fcm_options": map[string]interface{}{
 					"link": "https://link.com",
 				},
 			},
@@ -308,6 +323,10 @@ var validMessages = []struct {
 						"k2": true,
 					},
 				},
+				FCMOptions: &APNSFCMOptions{
+					AnalyticsLabel: "Analytics",
+					ImageURL:       "http://image.jpg",
+				},
 			},
 			Topic: "test-topic",
 		},
@@ -326,6 +345,10 @@ var validMessages = []struct {
 					},
 					"k1": "v1",
 					"k2": true,
+				},
+				"fcm_options": map[string]interface{}{
+					"analytics_label": "Analytics",
+					"image":           "http://image.jpg",
 				},
 			},
 			"topic": "test-topic",
@@ -508,6 +531,16 @@ var invalidMessages = []struct {
 		want: "malformed topic name",
 	},
 	{
+		name: "InvalidNotificationImage",
+		req: &Message{
+			Notification: &Notification{
+				ImageURL: "image.jpg",
+			},
+			Topic: "topic",
+		},
+		want: `invalid image URL: "image.jpg"`,
+	},
+	{
 		name: "InvalidAndroidTTL",
 		req: &Message{
 			Android: &AndroidConfig{
@@ -574,6 +607,18 @@ var invalidMessages = []struct {
 			Topic: "topic",
 		},
 		want: "bodyLocKey is required when specifying bodyLocArgs",
+	},
+	{
+		name: "InvalidAndroidImage",
+		req: &Message{
+			Android: &AndroidConfig{
+				Notification: &AndroidNotification{
+					ImageURL: "image.jpg",
+				},
+			},
+			Topic: "topic",
+		},
+		want: `invalid image URL: "image.jpg"`,
 	},
 	{
 		name: "APNSMultipleAps",
@@ -669,6 +714,18 @@ var invalidMessages = []struct {
 			Topic: "topic",
 		},
 		want: "locKey is required when specifying locArgs",
+	},
+	{
+		name: "InvalidAPNSImage",
+		req: &Message{
+			APNS: &APNSConfig{
+				FCMOptions: &APNSFCMOptions{
+					ImageURL: "image.jpg",
+				},
+			},
+			Topic: "topic",
+		},
+		want: `invalid image URL: "image.jpg"`,
 	},
 	{
 		name: "MultipleSoundSpecifications",
@@ -771,41 +828,6 @@ var invalidMessages = []struct {
 			Topic: "topic",
 		},
 		want: `invalid link URL: "http://link.com"; want scheme: "https"`,
-	},
-}
-
-var invalidTopicMgtArgs = []struct {
-	name   string
-	tokens []string
-	topic  string
-	want   string
-}{
-	{
-		name: "NoTokensAndTopic",
-		want: "no tokens specified",
-	},
-	{
-		name:   "NoTopic",
-		tokens: []string{"token1"},
-		want:   "topic name not specified",
-	},
-	{
-		name:   "InvalidTopicName",
-		tokens: []string{"token1"},
-		topic:  "foo*bar",
-		want:   "invalid topic name: \"foo*bar\"",
-	},
-	{
-		name:   "TooManyTokens",
-		tokens: strings.Split("a"+strings.Repeat(",a", 1000), ","),
-		topic:  "topic",
-		want:   "tokens list must not contain more than 1000 items",
-	},
-	{
-		name:   "EmptyToken",
-		tokens: []string{"foo", ""},
-		topic:  "topic",
-		want:   "tokens list must not contain empty strings",
 	},
 }
 
@@ -963,72 +985,9 @@ func TestSendError(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.fcmEndpoint = ts.URL
-	client.client.RetryConfig = nil
+	client.fcmClient.httpClient.RetryConfig = nil
 
-	cases := []struct {
-		resp, want string
-		check      func(error) bool
-	}{
-		{
-			resp:  "{}",
-			want:  "http error status: 500; reason: server responded with an unknown error; response: {}",
-			check: IsUnknown,
-		},
-		{
-			resp:  "{\"error\": {\"status\": \"INVALID_ARGUMENT\", \"message\": \"test error\"}}",
-			want:  "http error status: 500; reason: request contains an invalid argument; code: invalid-argument; details: test error",
-			check: IsInvalidArgument,
-		},
-		{
-			resp: "{\"error\": {\"status\": \"NOT_FOUND\", \"message\": \"test error\"}}",
-			want: "http error status: 500; reason: app instance has been unregistered; code: registration-token-not-registered; " +
-				"details: test error",
-			check: IsRegistrationTokenNotRegistered,
-		},
-		{
-			resp: "{\"error\": {\"status\": \"QUOTA_EXCEEDED\", \"message\": \"test error\"}}",
-			want: "http error status: 500; reason: messaging service quota exceeded; code: message-rate-exceeded; " +
-				"details: test error",
-			check: IsMessageRateExceeded,
-		},
-		{
-			resp: "{\"error\": {\"status\": \"UNAVAILABLE\", \"message\": \"test error\"}}",
-			want: "http error status: 500; reason: backend servers are temporarily unavailable; code: server-unavailable; " +
-				"details: test error",
-			check: IsServerUnavailable,
-		},
-		{
-			resp: "{\"error\": {\"status\": \"INTERNAL\", \"message\": \"test error\"}}",
-			want: "http error status: 500; reason: backend servers encountered an unknown internl error; code: internal-error; " +
-				"details: test error",
-			check: IsInternal,
-		},
-		{
-			resp: "{\"error\": {\"status\": \"APNS_AUTH_ERROR\", \"message\": \"test error\"}}",
-			want: "http error status: 500; reason: apns certificate or auth key was invalid; code: invalid-apns-credentials; " +
-				"details: test error",
-			check: IsInvalidAPNSCredentials,
-		},
-		{
-			resp: "{\"error\": {\"status\": \"SENDER_ID_MISMATCH\", \"message\": \"test error\"}}",
-			want: "http error status: 500; reason: sender id does not match regisration token; code: mismatched-credential; " +
-				"details: test error",
-			check: IsMismatchedCredential,
-		},
-		{
-			resp: `{"error": {"status": "INVALID_ARGUMENT", "message": "test error", "details": [` +
-				`{"@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", "errorCode": "UNREGISTERED"}]}}`,
-			want: "http error status: 500; reason: app instance has been unregistered; code: registration-token-not-registered; " +
-				"details: test error",
-			check: IsRegistrationTokenNotRegistered,
-		},
-		{
-			resp:  "not json",
-			want:  "http error status: 500; reason: server responded with an unknown error; response: not json",
-			check: IsUnknown,
-		},
-	}
-	for _, tc := range cases {
+	for _, tc := range httpErrors {
 		resp = tc.resp
 		name, err := client.Send(ctx, &Message{Topic: "topic"})
 		if err == nil || err.Error() != tc.want || !tc.check(err) {
@@ -1050,150 +1009,6 @@ func TestInvalidMessage(t *testing.T) {
 				t.Errorf("Send(%s) = (%q, %v); want = (%q, %q)", tc.name, name, err, "", tc.want)
 			}
 		})
-	}
-}
-
-func TestSubscribe(t *testing.T) {
-	var tr *http.Request
-	var b []byte
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tr = r
-		b, _ = ioutil.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("{\"results\": [{}, {\"error\": \"error_reason\"}]}"))
-	}))
-	defer ts.Close()
-
-	ctx := context.Background()
-	client, err := NewClient(ctx, testMessagingConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.iidEndpoint = ts.URL
-
-	resp, err := client.SubscribeToTopic(ctx, []string{"id1", "id2"}, "test-topic")
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkIIDRequest(t, b, tr, iidSubscribe)
-	checkTopicMgtResponse(t, resp)
-}
-
-func TestInvalidSubscribe(t *testing.T) {
-	ctx := context.Background()
-	client, err := NewClient(ctx, testMessagingConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range invalidTopicMgtArgs {
-		t.Run(tc.name, func(t *testing.T) {
-			resp, err := client.SubscribeToTopic(ctx, tc.tokens, tc.topic)
-			if err == nil || err.Error() != tc.want {
-				t.Errorf(
-					"SubscribeToTopic(%s) = (%#v, %v); want = (nil, %q)", tc.name, resp, err, tc.want)
-			}
-		})
-	}
-}
-
-func TestUnsubscribe(t *testing.T) {
-	var tr *http.Request
-	var b []byte
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tr = r
-		b, _ = ioutil.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("{\"results\": [{}, {\"error\": \"error_reason\"}]}"))
-	}))
-	defer ts.Close()
-
-	ctx := context.Background()
-	client, err := NewClient(ctx, testMessagingConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.iidEndpoint = ts.URL
-
-	resp, err := client.UnsubscribeFromTopic(ctx, []string{"id1", "id2"}, "test-topic")
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkIIDRequest(t, b, tr, iidUnsubscribe)
-	checkTopicMgtResponse(t, resp)
-}
-
-func TestInvalidUnsubscribe(t *testing.T) {
-	ctx := context.Background()
-	client, err := NewClient(ctx, testMessagingConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range invalidTopicMgtArgs {
-		t.Run(tc.name, func(t *testing.T) {
-			resp, err := client.UnsubscribeFromTopic(ctx, tc.tokens, tc.topic)
-			if err == nil || err.Error() != tc.want {
-				t.Errorf(
-					"UnsubscribeFromTopic(%s) = (%#v, %v); want = (nil, %q)", tc.name, resp, err, tc.want)
-			}
-		})
-	}
-}
-
-func TestTopicManagementError(t *testing.T) {
-	var resp string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(resp))
-	}))
-	defer ts.Close()
-
-	ctx := context.Background()
-	client, err := NewClient(ctx, testMessagingConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.iidEndpoint = ts.URL
-	client.client.RetryConfig = nil
-
-	cases := []struct {
-		resp, want string
-		check      func(error) bool
-	}{
-		{
-			resp:  "{}",
-			want:  "http error status: 500; reason: client encountered an unknown error; response: {}",
-			check: IsUnknown,
-		},
-		{
-			resp:  "{\"error\": \"INVALID_ARGUMENT\"}",
-			want:  "http error status: 500; reason: request contains an invalid argument; code: invalid-argument",
-			check: IsInvalidArgument,
-		},
-		{
-			resp:  "{\"error\": \"TOO_MANY_TOPICS\"}",
-			want:  "http error status: 500; reason: client exceeded the number of allowed topics; code: too-many-topics",
-			check: IsTooManyTopics,
-		},
-		{
-			resp:  "not json",
-			want:  "http error status: 500; reason: client encountered an unknown error; response: not json",
-			check: IsUnknown,
-		},
-	}
-	for _, tc := range cases {
-		resp = tc.resp
-		tmr, err := client.SubscribeToTopic(ctx, []string{"id1"}, "topic")
-		if err == nil || err.Error() != tc.want || !tc.check(err) {
-			t.Errorf("SubscribeToTopic() = (%#v, %v); want = (nil, %q)", tmr, err, tc.want)
-		}
-	}
-	for _, tc := range cases {
-		resp = tc.resp
-		tmr, err := client.UnsubscribeFromTopic(ctx, []string{"id1"}, "topic")
-		if err == nil || err.Error() != tc.want {
-			t.Errorf("UnsubscribeFromTopic() = (%#v, %v); want = (nil, %q)", tmr, err, tc.want)
-		}
 	}
 }
 
@@ -1234,46 +1049,66 @@ func checkFCMRequest(t *testing.T, b []byte, tr *http.Request, want map[string]i
 	}
 }
 
-func checkIIDRequest(t *testing.T, b []byte, tr *http.Request, op string) {
-	var parsed map[string]interface{}
-	if err := json.Unmarshal(b, &parsed); err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]interface{}{
-		"to":                  "/topics/test-topic",
-		"registration_tokens": []interface{}{"id1", "id2"},
-	}
-	if !reflect.DeepEqual(parsed, want) {
-		t.Errorf("Body = %#v; want = %#v", parsed, want)
-	}
-
-	if tr.Method != http.MethodPost {
-		t.Errorf("Method = %q; want = %q", tr.Method, http.MethodPost)
-	}
-	wantOp := "/" + op
-	if tr.URL.Path != wantOp {
-		t.Errorf("Path = %q; want = %q", tr.URL.Path, wantOp)
-	}
-	if h := tr.Header.Get("Authorization"); h != "Bearer test-token" {
-		t.Errorf("Authorization = %q; want = %q", h, "Bearer test-token")
-	}
-}
-
-func checkTopicMgtResponse(t *testing.T, resp *TopicManagementResponse) {
-	if resp.SuccessCount != 1 {
-		t.Errorf("SuccessCount = %d; want  = %d", resp.SuccessCount, 1)
-	}
-	if resp.FailureCount != 1 {
-		t.Errorf("FailureCount = %d; want  = %d", resp.FailureCount, 1)
-	}
-	if len(resp.Errors) != 1 {
-		t.Fatalf("Errors = %d; want = %d", len(resp.Errors), 1)
-	}
-	e := resp.Errors[0]
-	if e.Index != 1 {
-		t.Errorf("ErrorInfo.Index = %d; want = %d", e.Index, 1)
-	}
-	if e.Reason != "unknown-error" {
-		t.Errorf("ErrorInfo.Reason = %s; want = %s", e.Reason, "unknown-error")
-	}
+var httpErrors = []struct {
+	resp, want string
+	check      func(error) bool
+}{
+	{
+		resp:  "{}",
+		want:  "http error status: 500; reason: server responded with an unknown error; response: {}",
+		check: IsUnknown,
+	},
+	{
+		resp:  "{\"error\": {\"status\": \"INVALID_ARGUMENT\", \"message\": \"test error\"}}",
+		want:  "http error status: 500; reason: request contains an invalid argument; code: invalid-argument; details: test error",
+		check: IsInvalidArgument,
+	},
+	{
+		resp: "{\"error\": {\"status\": \"NOT_FOUND\", \"message\": \"test error\"}}",
+		want: "http error status: 500; reason: app instance has been unregistered; code: registration-token-not-registered; " +
+			"details: test error",
+		check: IsRegistrationTokenNotRegistered,
+	},
+	{
+		resp: "{\"error\": {\"status\": \"QUOTA_EXCEEDED\", \"message\": \"test error\"}}",
+		want: "http error status: 500; reason: messaging service quota exceeded; code: message-rate-exceeded; " +
+			"details: test error",
+		check: IsMessageRateExceeded,
+	},
+	{
+		resp: "{\"error\": {\"status\": \"UNAVAILABLE\", \"message\": \"test error\"}}",
+		want: "http error status: 500; reason: backend servers are temporarily unavailable; code: server-unavailable; " +
+			"details: test error",
+		check: IsServerUnavailable,
+	},
+	{
+		resp: "{\"error\": {\"status\": \"INTERNAL\", \"message\": \"test error\"}}",
+		want: "http error status: 500; reason: backend servers encountered an unknown internl error; code: internal-error; " +
+			"details: test error",
+		check: IsInternal,
+	},
+	{
+		resp: "{\"error\": {\"status\": \"APNS_AUTH_ERROR\", \"message\": \"test error\"}}",
+		want: "http error status: 500; reason: apns certificate or auth key was invalid; code: invalid-apns-credentials; " +
+			"details: test error",
+		check: IsInvalidAPNSCredentials,
+	},
+	{
+		resp: "{\"error\": {\"status\": \"SENDER_ID_MISMATCH\", \"message\": \"test error\"}}",
+		want: "http error status: 500; reason: sender id does not match registration token; code: mismatched-credential; " +
+			"details: test error",
+		check: IsMismatchedCredential,
+	},
+	{
+		resp: `{"error": {"status": "INVALID_ARGUMENT", "message": "test error", "details": [` +
+			`{"@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", "errorCode": "UNREGISTERED"}]}}`,
+		want: "http error status: 500; reason: app instance has been unregistered; code: registration-token-not-registered; " +
+			"details: test error",
+		check: IsRegistrationTokenNotRegistered,
+	},
+	{
+		resp:  "not json",
+		want:  "http error status: 500; reason: server responded with an unknown error; response: not json",
+		check: IsUnknown,
+	},
 }

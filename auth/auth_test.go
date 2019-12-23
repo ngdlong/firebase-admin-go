@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -30,6 +31,11 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/api/transport"
+)
+
+const (
+	testProjectID = "mock-project-id"
+	testVersion   = "test-version"
 )
 
 var (
@@ -48,31 +54,22 @@ var (
 			AccessToken: "test.token",
 		}),
 	}
-	testClock     = &internal.MockClock{Timestamp: time.Now()}
-	testProjectID = "mock-project-id"
+	testClock = &internal.MockClock{Timestamp: time.Now()}
 )
 
 func TestMain(m *testing.M) {
 	var err error
 	testSigner, err = signerForTests(context.Background())
-	if err != nil {
-		log.Fatalln(err)
-	}
+	logFatal(err)
 
 	testIDTokenVerifier, err = idTokenVerifierForTests(context.Background())
-	if err != nil {
-		log.Fatalln(err)
-	}
+	logFatal(err)
 
 	testCookieVerifier, err = cookieVerifierForTests(context.Background())
-	if err != nil {
-		log.Fatalln(err)
-	}
+	logFatal(err)
 
 	testGetUserResponse, err = ioutil.ReadFile("../testdata/get_user.json")
-	if err != nil {
-		log.Fatalln(err)
-	}
+	logFatal(err)
 
 	testIDToken = getIDToken(nil)
 	testSessionCookie = getSessionCookie(nil)
@@ -88,7 +85,7 @@ func TestNewClientWithServiceAccountCredentials(t *testing.T) {
 		Creds:     creds,
 		Opts:      optsWithServiceAcct,
 		ProjectID: creds.ProjectID,
-		Version:   "test-version",
+		Version:   testVersion,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -103,19 +100,18 @@ func TestNewClientWithServiceAccountCredentials(t *testing.T) {
 	if err := checkCookieVerifier(client.cookieVerifier, creds.ProjectID); err != nil {
 		t.Errorf("NewClient().cookieVerifier: %v", err)
 	}
+	if err := checkUserManagementClient(client, creds.ProjectID); err != nil {
+		t.Errorf("NewClient().userManagementClient: %v", err)
+	}
 	if client.clock != internal.SystemClock {
 		t.Errorf("NewClient().clock = %v; want = SystemClock", client.clock)
-	}
-	wantVersion := "Go/Admin/test-version"
-	if client.version != wantVersion {
-		t.Errorf("NewClient().version = %q; want = %q", client.version, wantVersion)
 	}
 }
 
 func TestNewClientWithoutCredentials(t *testing.T) {
 	conf := &internal.AuthConfig{
 		Opts:    optsWithTokenSource,
-		Version: "test-version",
+		Version: testVersion,
 	}
 	client, err := NewClient(context.Background(), conf)
 	if err != nil {
@@ -131,12 +127,11 @@ func TestNewClientWithoutCredentials(t *testing.T) {
 	if err := checkCookieVerifier(client.cookieVerifier, ""); err != nil {
 		t.Errorf("NewClient().cookieVerifier: %v", err)
 	}
+	if err := checkUserManagementClient(client, ""); err != nil {
+		t.Errorf("NewClient().userManagementClient: %v", err)
+	}
 	if client.clock != internal.SystemClock {
 		t.Errorf("NewClient().clock = %v; want = SystemClock", client.clock)
-	}
-	wantVersion := "Go/Admin/test-version"
-	if client.version != wantVersion {
-		t.Errorf("NewClient().version = %q; want = %q", client.version, wantVersion)
 	}
 }
 
@@ -144,7 +139,7 @@ func TestNewClientWithServiceAccountID(t *testing.T) {
 	conf := &internal.AuthConfig{
 		Opts:             optsWithTokenSource,
 		ServiceAccountID: "explicit-service-account",
-		Version:          "test-version",
+		Version:          testVersion,
 	}
 	client, err := NewClient(context.Background(), conf)
 	if err != nil {
@@ -160,12 +155,11 @@ func TestNewClientWithServiceAccountID(t *testing.T) {
 	if err := checkCookieVerifier(client.cookieVerifier, ""); err != nil {
 		t.Errorf("NewClient().cookieVerifier: %v", err)
 	}
+	if err := checkUserManagementClient(client, ""); err != nil {
+		t.Errorf("NewClient().userManagementClient: %v", err)
+	}
 	if client.clock != internal.SystemClock {
 		t.Errorf("NewClient().clock = %v; want = SystemClock", client.clock)
-	}
-	wantVersion := "Go/Admin/test-version"
-	if client.version != wantVersion {
-		t.Errorf("NewClient().version = %q; want = %q", client.version, wantVersion)
 	}
 
 	email, err := client.signer.Email(context.Background())
@@ -184,7 +178,7 @@ func TestNewClientWithUserCredentials(t *testing.T) {
 	conf := &internal.AuthConfig{
 		Creds:   creds,
 		Opts:    []option.ClientOption{option.WithCredentials(creds)},
-		Version: "test-version",
+		Version: testVersion,
 	}
 	client, err := NewClient(context.Background(), conf)
 	if err != nil {
@@ -200,12 +194,11 @@ func TestNewClientWithUserCredentials(t *testing.T) {
 	if err := checkCookieVerifier(client.cookieVerifier, ""); err != nil {
 		t.Errorf("NewClient().cookieVerifier: %v", err)
 	}
+	if err := checkUserManagementClient(client, ""); err != nil {
+		t.Errorf("NewClient().userManagementClient: %v", err)
+	}
 	if client.clock != internal.SystemClock {
 		t.Errorf("NewClient().clock = %v; want = SystemClock", client.clock)
-	}
-	wantVersion := "Go/Admin/test-version"
-	if client.version != wantVersion {
-		t.Errorf("NewClient().version = %q; want = %q", client.version, wantVersion)
 	}
 }
 
@@ -326,12 +319,61 @@ func TestCustomTokenInvalidCredential(t *testing.T) {
 
 func TestVerifyIDToken(t *testing.T) {
 	client := &Client{
-		idTokenVerifier: testIDTokenVerifier,
+		baseClient: &baseClient{
+			idTokenVerifier: testIDTokenVerifier,
+		},
 	}
 
 	ft, err := client.VerifyIDToken(context.Background(), testIDToken)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	now := testClock.Now().Unix()
+	if ft.AuthTime != now-100 {
+		t.Errorf("AuthTime = %d; want = %d", ft.AuthTime, now-100)
+	}
+	if ft.Firebase.SignInProvider != "custom" {
+		t.Errorf("SignInProvider = %q; want = %q", ft.Firebase.SignInProvider, "custom")
+	}
+	if ft.Firebase.Tenant != "" {
+		t.Errorf("Tenant = %q; want = %q", ft.Firebase.Tenant, "")
+	}
+	if ft.Claims["admin"] != true {
+		t.Errorf("Claims['admin'] = %v; want = true", ft.Claims["admin"])
+	}
+	if ft.UID != ft.Subject {
+		t.Errorf("UID = %q; Sub = %q; want UID = Sub", ft.UID, ft.Subject)
+	}
+}
+
+func TestVerifyIDTokenFromTenant(t *testing.T) {
+	client := &Client{
+		baseClient: &baseClient{
+			idTokenVerifier: testIDTokenVerifier,
+		},
+	}
+
+	idToken := getIDToken(mockIDTokenPayload{
+		"firebase": map[string]interface{}{
+			"tenant":           "tenantID",
+			"sign_in_provider": "custom",
+		},
+	})
+	ft, err := client.VerifyIDToken(context.Background(), idToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := testClock.Now().Unix()
+	if ft.AuthTime != now-100 {
+		t.Errorf("AuthTime = %d; want = %d", ft.AuthTime, now-100)
+	}
+	if ft.Firebase.SignInProvider != "custom" {
+		t.Errorf("SignInProvider = %q; want = %q", ft.Firebase.SignInProvider, "custom")
+	}
+	if ft.Firebase.Tenant != "tenantID" {
+		t.Errorf("Tenant = %q; want = %q", ft.Firebase.Tenant, "tenantID")
 	}
 	if ft.Claims["admin"] != true {
 		t.Errorf("Claims['admin'] = %v; want = true", ft.Claims["admin"])
@@ -355,7 +397,9 @@ func TestVerifyIDTokenClockSkew(t *testing.T) {
 	}
 
 	client := &Client{
-		idTokenVerifier: testIDTokenVerifier,
+		baseClient: &baseClient{
+			idTokenVerifier: testIDTokenVerifier,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -375,7 +419,9 @@ func TestVerifyIDTokenClockSkew(t *testing.T) {
 
 func TestVerifyIDTokenInvalidSignature(t *testing.T) {
 	client := &Client{
-		idTokenVerifier: testIDTokenVerifier,
+		baseClient: &baseClient{
+			idTokenVerifier: testIDTokenVerifier,
+		},
 	}
 	parts := strings.Split(testIDToken, ".")
 	token := fmt.Sprintf("%s:%s:invalidsignature", parts[0], parts[1])
@@ -469,7 +515,9 @@ func TestVerifyIDTokenError(t *testing.T) {
 	}
 
 	client := &Client{
-		idTokenVerifier: testIDTokenVerifier,
+		baseClient: &baseClient{
+			idTokenVerifier: testIDTokenVerifier,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -501,7 +549,9 @@ func TestVerifyIDTokenInvalidAlgorithm(t *testing.T) {
 	}
 
 	client := &Client{
-		idTokenVerifier: testIDTokenVerifier,
+		baseClient: &baseClient{
+			idTokenVerifier: testIDTokenVerifier,
+		},
 	}
 	if _, err := client.VerifyIDToken(context.Background(), token); err == nil {
 		t.Errorf("VerifyIDToken(InvalidAlgorithm) = nil; want error")
@@ -525,9 +575,11 @@ func TestVerifyIDTokenWithNoProjectID(t *testing.T) {
 
 func TestCustomTokenVerification(t *testing.T) {
 	client := &Client{
-		idTokenVerifier: testIDTokenVerifier,
-		signer:          testSigner,
-		clock:           testClock,
+		baseClient: &baseClient{
+			idTokenVerifier: testIDTokenVerifier,
+		},
+		signer: testSigner,
+		clock:  testClock,
 	}
 	token, err := client.CustomToken(context.Background(), "user1")
 	if err != nil {
@@ -546,7 +598,9 @@ func TestCertificateRequestError(t *testing.T) {
 	}
 	tv.keySource = &mockKeySource{nil, errors.New("mock error")}
 	client := &Client{
-		idTokenVerifier: tv,
+		baseClient: &baseClient{
+			idTokenVerifier: tv,
+		},
 	}
 	if _, err := client.VerifyIDToken(context.Background(), testIDToken); err == nil {
 		t.Error("VeridyIDToken() = nil; want error")
@@ -634,12 +688,61 @@ func TestIDTokenRevocationCheckUserMgtError(t *testing.T) {
 
 func TestVerifySessionCookie(t *testing.T) {
 	client := &Client{
-		cookieVerifier: testCookieVerifier,
+		baseClient: &baseClient{
+			cookieVerifier: testCookieVerifier,
+		},
 	}
 
 	ft, err := client.VerifySessionCookie(context.Background(), testSessionCookie)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	now := testClock.Now().Unix()
+	if ft.AuthTime != now-100 {
+		t.Errorf("AuthTime = %d; want = %d", ft.AuthTime, now-100)
+	}
+	if ft.Firebase.SignInProvider != "custom" {
+		t.Errorf("SignInProvider = %q; want = %q", ft.Firebase.SignInProvider, "custom")
+	}
+	if ft.Firebase.Tenant != "" {
+		t.Errorf("Tenant = %q; want = %q", ft.Firebase.Tenant, "")
+	}
+	if ft.Claims["admin"] != true {
+		t.Errorf("Claims['admin'] = %v; want = true", ft.Claims["admin"])
+	}
+	if ft.UID != ft.Subject {
+		t.Errorf("UID = %q; Sub = %q; want UID = Sub", ft.UID, ft.Subject)
+	}
+}
+
+func TestVerifySessionCookieFromTenant(t *testing.T) {
+	client := &Client{
+		baseClient: &baseClient{
+			cookieVerifier: testCookieVerifier,
+		},
+	}
+
+	cookie := getSessionCookie(mockIDTokenPayload{
+		"firebase": map[string]interface{}{
+			"tenant":           "tenantID",
+			"sign_in_provider": "custom",
+		},
+	})
+	ft, err := client.VerifySessionCookie(context.Background(), cookie)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := testClock.Now().Unix()
+	if ft.AuthTime != now-100 {
+		t.Errorf("AuthTime = %d; want = %d", ft.AuthTime, now-100)
+	}
+	if ft.Firebase.SignInProvider != "custom" {
+		t.Errorf("SignInProvider = %q; want = %q", ft.Firebase.SignInProvider, "custom")
+	}
+	if ft.Firebase.Tenant != "tenantID" {
+		t.Errorf("Tenant = %q; want = %q", ft.Firebase.Tenant, "tenantID")
 	}
 	if ft.Claims["admin"] != true {
 		t.Errorf("Claims['admin'] = %v; want = true", ft.Claims["admin"])
@@ -723,7 +826,9 @@ func TestVerifySessionCookieError(t *testing.T) {
 	}
 
 	client := &Client{
-		cookieVerifier: testCookieVerifier,
+		baseClient: &baseClient{
+			cookieVerifier: testCookieVerifier,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -897,11 +1002,16 @@ func getIDToken(p mockIDTokenPayload) string {
 
 func getIDTokenWithKid(kid string, p mockIDTokenPayload) string {
 	pCopy := mockIDTokenPayload{
-		"aud":   testProjectID,
-		"iss":   "https://securetoken.google.com/" + testProjectID,
-		"iat":   testClock.Now().Unix() - 100,
-		"exp":   testClock.Now().Unix() + 3600,
-		"sub":   "1234567890",
+		"aud":       testProjectID,
+		"iss":       "https://securetoken.google.com/" + testProjectID,
+		"iat":       testClock.Now().Unix() - 100,
+		"exp":       testClock.Now().Unix() + 3600,
+		"auth_time": testClock.Now().Unix() - 100,
+		"sub":       "1234567890",
+		"firebase": map[string]interface{}{
+			"identities":       map[string]interface{}{},
+			"sign_in_provider": "custom",
+		},
 		"admin": true,
 	}
 	for k, v := range p {
@@ -917,9 +1027,7 @@ func getIDTokenWithKid(kid string, p mockIDTokenPayload) string {
 		payload: pCopy,
 	}
 	token, err := info.Token(context.Background(), testSigner)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	logFatal(err)
 	return token
 }
 
@@ -946,6 +1054,32 @@ func checkCookieVerifier(tv *tokenVerifier, projectID string) error {
 	if tv.shortName != "session cookie" {
 		return fmt.Errorf("shortName = %q; want = %q", tv.shortName, "session cookie")
 	}
+	return nil
+}
+
+func checkUserManagementClient(client *Client, wantProjectID string) error {
+	umc := client.userManagementClient
+	if umc.baseURL != idToolkitV1Endpoint {
+		return fmt.Errorf("baseURL = %q; want = %q", umc.baseURL, idToolkitV1Endpoint)
+	}
+	if umc.projectID != wantProjectID {
+		return fmt.Errorf("projectID = %q; want = %q", umc.projectID, wantProjectID)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "https://firebase.google.com", nil)
+	if err != nil {
+		return err
+	}
+
+	for _, opt := range umc.httpClient.Opts {
+		opt(req)
+	}
+	version := req.Header.Get("X-Client-Version")
+	wantVersion := fmt.Sprintf("Go/Admin/%s", testVersion)
+	if version != wantVersion {
+		return fmt.Errorf("version = %q; want = %q", version, wantVersion)
+	}
+
 	return nil
 }
 
@@ -994,5 +1128,11 @@ func verifyCustomToken(ctx context.Context, token string, expected map[string]in
 		if payload.Claims[k] != v {
 			t.Errorf("Claim[%q]: %v; want: %v", k, payload.Claims[k], v)
 		}
+	}
+}
+
+func logFatal(err error) {
+	if err != nil {
+		log.Fatal(err)
 	}
 }
