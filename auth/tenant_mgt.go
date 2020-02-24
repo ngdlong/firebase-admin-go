@@ -85,19 +85,12 @@ type TenantManager struct {
 	httpClient *internal.HTTPClient
 }
 
-func newTenantManager(client *http.Client, conf *internal.AuthConfig, base *baseClient) *TenantManager {
-	hc := internal.WithDefaultRetryConfig(client)
-	hc.CreateErrFn = handleHTTPError
-	hc.SuccessFn = internal.HasSuccessStatus
-	hc.Opts = []internal.HTTPOption{
-		internal.WithHeader("X-Client-Version", fmt.Sprintf("Go/Admin/%s", conf.Version)),
-	}
-
+func newTenantManager(client *internal.HTTPClient, conf *internal.AuthConfig, base *baseClient) *TenantManager {
 	return &TenantManager{
 		base:       base,
 		endpoint:   tenantMgtEndpoint,
 		projectID:  conf.ProjectID,
-		httpClient: hc,
+		httpClient: client,
 	}
 }
 
@@ -350,9 +343,9 @@ func (it *TenantIterator) fetch(pageSize int, pageToken string) (string, error) 
 		return "", err
 	}
 
-	for _, tenant := range result.Tenants {
-		tenant.ID = extractResourceID(tenant.ID)
-		it.tenants = append(it.tenants, &tenant)
+	for i := range result.Tenants {
+		result.Tenants[i].ID = extractResourceID(result.Tenants[i].ID)
+		it.tenants = append(it.tenants, &result.Tenants[i])
 	}
 
 	it.pageInfo.Token = result.NextPageToken
