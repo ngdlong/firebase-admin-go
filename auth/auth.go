@@ -229,8 +229,8 @@ type baseClient struct {
 	projectID              string
 	tenantID               string
 	httpClient             *internal.HTTPClient
-	idTokenVerifier        *tokenVerifier
-	cookieVerifier         *tokenVerifier
+	idTokenVerifier        *TokenVerifier
+	cookieVerifier         *TokenVerifier
 }
 
 func (c *baseClient) withTenantID(tenantID string) *baseClient {

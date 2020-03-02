@@ -43,8 +43,8 @@ var (
 	testIDToken         string
 	testSessionCookie   string
 	testSigner          cryptoSigner
-	testIDTokenVerifier *tokenVerifier
-	testCookieVerifier  *tokenVerifier
+	testIDTokenVerifier *TokenVerifier
+	testCookieVerifier  *TokenVerifier
 
 	optsWithServiceAcct = []option.ClientOption{
 		option.WithCredentialsFile("../testdata/service_account.json"),
@@ -928,7 +928,7 @@ func signerForTests(ctx context.Context) (cryptoSigner, error) {
 	return signerFromCreds(creds.JSON)
 }
 
-func idTokenVerifierForTests(ctx context.Context) (*tokenVerifier, error) {
+func idTokenVerifierForTests(ctx context.Context) (*TokenVerifier, error) {
 	tv, err := newIDTokenVerifier(ctx, testProjectID)
 	if err != nil {
 		return nil, err
@@ -942,7 +942,7 @@ func idTokenVerifierForTests(ctx context.Context) (*tokenVerifier, error) {
 	return tv, nil
 }
 
-func cookieVerifierForTests(ctx context.Context) (*tokenVerifier, error) {
+func cookieVerifierForTests(ctx context.Context) (*TokenVerifier, error) {
 	tv, err := newSessionCookieVerifier(ctx, testProjectID)
 	if err != nil {
 		return nil, err
@@ -1031,9 +1031,9 @@ func getIDTokenWithKid(kid string, p mockIDTokenPayload) string {
 	return token
 }
 
-func checkIDTokenVerifier(tv *tokenVerifier, projectID string) error {
+func checkIDTokenVerifier(tv *TokenVerifier, projectID string) error {
 	if tv == nil {
-		return errors.New("tokenVerifier not initialized")
+		return errors.New("TokenVerifier not initialized")
 	}
 	if tv.projectID != projectID {
 		return fmt.Errorf("projectID = %q; want = %q", tv.projectID, projectID)
@@ -1044,9 +1044,9 @@ func checkIDTokenVerifier(tv *tokenVerifier, projectID string) error {
 	return nil
 }
 
-func checkCookieVerifier(tv *tokenVerifier, projectID string) error {
+func checkCookieVerifier(tv *TokenVerifier, projectID string) error {
 	if tv == nil {
-		return errors.New("tokenVerifier not initialized")
+		return errors.New("TokenVerifier not initialized")
 	}
 	if tv.projectID != projectID {
 		return fmt.Errorf("projectID = %q; want = %q", tv.projectID, projectID)
