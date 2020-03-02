@@ -28,7 +28,7 @@ import (
 )
 
 func TestNewIDTokenVerifier(t *testing.T) {
-	tv, err := newIDTokenVerifier(context.Background(), testProjectID)
+	tv, err := NewIDTokenVerifier(context.Background(), testProjectID)
 	if err != nil {
 		t.Fatal(err)
 	}

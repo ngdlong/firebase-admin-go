@@ -592,7 +592,7 @@ func TestCustomTokenVerification(t *testing.T) {
 }
 
 func TestCertificateRequestError(t *testing.T) {
-	tv, err := newIDTokenVerifier(context.Background(), testProjectID)
+	tv, err := NewIDTokenVerifier(context.Background(), testProjectID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -929,7 +929,7 @@ func signerForTests(ctx context.Context) (cryptoSigner, error) {
 }
 
 func idTokenVerifierForTests(ctx context.Context) (*TokenVerifier, error) {
-	tv, err := newIDTokenVerifier(ctx, testProjectID)
+	tv, err := NewIDTokenVerifier(ctx, testProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -943,7 +943,7 @@ func idTokenVerifierForTests(ctx context.Context) (*TokenVerifier, error) {
 }
 
 func cookieVerifierForTests(ctx context.Context) (*TokenVerifier, error) {
-	tv, err := newSessionCookieVerifier(ctx, testProjectID)
+	tv, err := NewSessionCookieVerifier(ctx, testProjectID)
 	if err != nil {
 		return nil, err
 	}

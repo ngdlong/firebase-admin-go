@@ -58,7 +58,7 @@ type TokenVerifier struct {
 	clock             internal.Clock
 }
 
-func newIDTokenVerifier(ctx context.Context, projectID string) (*TokenVerifier, error) {
+func NewIDTokenVerifier(ctx context.Context, projectID string) (*TokenVerifier, error) {
 	noAuthHTTPClient, _, err := transport.NewHTTPClient(ctx, option.WithoutAuthentication())
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func newIDTokenVerifier(ctx context.Context, projectID string) (*TokenVerifier, 
 	}, nil
 }
 
-func newSessionCookieVerifier(ctx context.Context, projectID string) (*TokenVerifier, error) {
+func NewSessionCookieVerifier(ctx context.Context, projectID string) (*TokenVerifier, error) {
 	noAuthHTTPClient, _, err := transport.NewHTTPClient(ctx, option.WithoutAuthentication())
 	if err != nil {
 		return nil, err

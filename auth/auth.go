@@ -83,12 +83,12 @@ func NewClient(ctx context.Context, conf *internal.AuthConfig) (*Client, error) 
 		}
 	}
 
-	idTokenVerifier, err := newIDTokenVerifier(ctx, conf.ProjectID)
+	idTokenVerifier, err := NewIDTokenVerifier(ctx, conf.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 
-	cookieVerifier, err := newSessionCookieVerifier(ctx, conf.ProjectID)
+	cookieVerifier, err := NewSessionCookieVerifier(ctx, conf.ProjectID)
 	if err != nil {
 		return nil, err
 	}
